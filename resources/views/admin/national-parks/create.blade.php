@@ -11,7 +11,7 @@
             <p class="text-slate-500 mt-1">Fill in the national park details below.</p>
         </div>
 
-        <form method="POST" action="{{ route('admin.national-parks.store') }}" class="space-y-6">
+        <form method="POST" enctype="multipart/form-data" action="{{ route('admin.national-parks.store') }}" class="space-y-6">
             @csrf
 
             <div>
@@ -40,6 +40,13 @@
                           rows="4"
                           class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                           placeholder="Describe the national park...">{{ old('description') }}</textarea>
+            </div>
+
+            <div>
+                <label for="images" class="block text-sm font-medium text-slate-700 mb-2">Park images (up to 5)</label>
+                <input type="file" name="images[]" id="images" accept="image/jpeg,image/png,image/webp" multiple
+                       class="w-full rounded-xl border border-slate-300 px-4 py-3">
+                <p class="mt-1 text-xs text-slate-500">JPG, PNG, or WebP; up to 5 MB each.</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

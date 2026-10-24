@@ -33,4 +33,9 @@ class NationalPark extends Model
     {
         return $this->hasMany(NationalParkSlotAvailability::class);
     }
+
+    public function images(): HasMany
+    {
+        return $this->hasMany(NationalParkImage::class)->orderBy('position');
+    }
 }

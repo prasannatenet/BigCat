@@ -33,6 +33,7 @@
             <table class="w-full text-left border-collapse">
                 <thead>
                     <tr class="bg-slate-50 border-b border-slate-200">
+                        <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Images</th>
                         <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Park Name</th>
                         <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Location</th>
                         <th class="px-6 py-4 text-xs font-semibold text-slate-500 uppercase text-center">Entry Fee (Indian)</th>
@@ -43,6 +44,7 @@
                 <tbody class="divide-y divide-slate-200">
                     @forelse ($parks as $park)
                         <tr class="hover:bg-slate-50 transition-colors group">
+                            <td class="px-6 py-4"><div class="flex gap-1">@foreach ($park->images->take(3) as $image)<img src="{{ Storage::disk('public')->url($image->path) }}" alt="" class="h-10 w-10 rounded object-cover">@endforeach</div></td>
                             <td class="px-6 py-4 text-sm font-medium text-slate-900">{{ $park->name }}</td>
                             <td class="px-6 py-4 text-sm text-slate-700">{{ $park->location }}</td>
                             <td class="px-6 py-4 text-sm text-slate-700 text-center">₹{{ number_format($park->entry_fee_indian, 2) }}</td>
@@ -63,7 +65,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="px-6 py-12 text-center text-slate-500">
+                            <td colspan="6" class="px-6 py-12 text-center text-slate-500">
                                 <svg class="w-12 h-12 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
                                 </svg>

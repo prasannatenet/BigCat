@@ -211,14 +211,14 @@
                 <p class="mt-1 text-sm text-slate-500">Park-wide dates apply to every zone by default. You can override individual dates for each zone.</p>
             </div>
 
-            <form method="POST" action="{{ route('admin.slots.store') }}" class="space-y-6 p-6 sm:p-8"
+            <form method="POST" enctype="multipart/form-data" action="{{ route('admin.slots.store') }}" class="space-y-6 p-6 sm:p-8"
                   x-data="{
-                      zones: @js(old('zones', [['name' => '', 'default_available' => '1', 'dates' => []]])),
+                      zones: @js(old('zones', [['name' => '', 'short_description' => '', 'default_available' => '1', 'dates' => []]])),
                       parkDates: @js($parkAvailability),
                       rangeStart: @js($calendarStartDate->toDateString()),
                       rangeEnd: @js($calendarEndDate->toDateString()),
                       activeMonthKey: @js($calendarStartDate->year.'-'.($calendarStartDate->month - 1)),
-                      addZone() { this.zones.push({ name: '', default_available: '1', dates: [] }); },
+                      addZone() { this.zones.push({ name: '', short_description: '', default_available: '1', dates: [] }); },
                       addDate(zone) { zone.dates.push({ date: '', is_available: '1' }); },
                       hasZoneDate(zone, date) { return zone.dates.some(override => override.date === date); },
                       calendarMonths() {
@@ -278,6 +278,18 @@
                                     <option value="1">Available</option>
                                     <option value="0">Not available</option>
                                 </select>
+                            </div>
+                        </div>
+                        <div class="mt-5 grid gap-5 md:grid-cols-2">
+                            <div>
+                                <label :for="`zone-description-${zoneIndex}`" class="mb-2 block text-sm font-semibold text-slate-700">Short zone description</label>
+                                <textarea :id="`zone-description-${zoneIndex}`" :name="`zones[${zoneIndex}][short_description]`" x-model="zone.short_description" maxlength="500" rows="3" placeholder="A short description visitors will see"
+                                          class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"></textarea>
+                            </div>
+                            <div>
+                                <label :for="`zone-images-${zoneIndex}`" class="mb-2 block text-sm font-semibold text-slate-700">Zone images (up to 2)</label>
+                                <input :id="`zone-images-${zoneIndex}`" :name="`zones[${zoneIndex}][images][]`" type="file" accept="image/jpeg,image/png,image/webp" multiple
+                                       class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm">
                             </div>
                         </div>
 
@@ -397,28 +409,51 @@
             <a href="{{ route('admin.slots.index', ['months' => $months]) }}" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">All national parks</a>
 
         @forelse ($zones as $zone)
-            <article class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <article x-data="{ zoneCardOpen: false, slotModalOpen: false, modifiedDatesOpen: false }" class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div class="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                     <div>
                         <p class="text-xs font-semibold uppercase tracking-wider text-emerald-700">{{ $zone->nationalPark->name }}</p>
                         <h3 class="mt-1 text-lg font-bold text-slate-900">{{ $zone->name }}</h3>
                     </div>
-                    <span class="inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold {{ $zone->default_available ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700' }}">
-                        <span class="h-1.5 w-1.5 rounded-full {{ $zone->default_available ? 'bg-emerald-600' : 'bg-slate-500' }}"></span>
-                        Zone fallback: {{ $zone->default_available ? 'Available' : 'Not available' }}
-                    </span>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" @click="zoneCardOpen = true; slotModalOpen = true"
+                                class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Make a slot</button>
+                        <span class="inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold {{ $zone->default_available ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700' }}">
+                            <span class="h-1.5 w-1.5 rounded-full {{ $zone->default_available ? 'bg-emerald-600' : 'bg-slate-500' }}"></span>
+                            Zone fallback: {{ $zone->default_available ? 'Available' : 'Not available' }}
+                        </span>
+                        <button type="button" @click="modifiedDatesOpen = zoneCardOpen ? ! modifiedDatesOpen : true; zoneCardOpen = true"
+                                :aria-expanded="modifiedDatesOpen.toString()"
+                                class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                x-text="modifiedDatesOpen ? 'Hide modified dates ({{ $zone->slots->count() }})' : 'Modified dates ({{ $zone->slots->count() }})'"></button>
+                        <button type="button" @click="zoneCardOpen = ! zoneCardOpen" :aria-expanded="zoneCardOpen.toString()"
+                                class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                x-text="zoneCardOpen ? 'Hide zone' : 'Show zone'"></button>
+                    </div>
                 </div>
 
-                <div class="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+                <div x-show="zoneCardOpen" x-transition class="grid gap-6 p-5 sm:p-6"
+                     :style="modifiedDatesOpen ? 'grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr)' : 'grid-template-columns: 1fr'">
+                    <div class="space-y-4">
                     <form method="POST" action="{{ route('admin.slots.update', $zone) }}"
                           x-data="{
-                              dates: @js($zone->slots->map(fn ($slot) => ['date' => $slot->slot_date->format('Y-m-d'), 'is_available' => $slot->is_available ? '1' : '0'])->values()),
+                              dates: @js($zone->slots->map(fn ($slot) => [
+                                  'date' => $slot->slot_date->format('Y-m-d'),
+                                  'morning_available' => $slot->morning_available ? '1' : '0',
+                                  'evening_available' => $slot->evening_available ? '1' : '0',
+                              ])->values()),
                               parkDates: @js($parkAvailability),
                               rangeStart: @js($calendarStartDate->toDateString()),
                               rangeEnd: @js($calendarEndDate->toDateString()),
                               activeMonthKey: @js($calendarStartDate->year.'-'.($calendarStartDate->month - 1)),
                               defaultAvailable: @js($zone->default_available ? '1' : '0'),
+                              selectedOverrideDate: '',
                               hasOverride(date) { return this.dates.some(override => override.date === date); },
+                              shiftAvailability(date, shift) {
+                                  const override = this.dates.find(item => item.date === date);
+                                  if (override) return override[shift] === '1';
+                                  return this.hasParkDate(date) ? this.parkDates[date] : this.defaultAvailable === '1';
+                              },
                               calendarMonths() {
                                   const start = new Date(`${this.rangeStart}T00:00:00`);
                                   const end = new Date(`${this.rangeEnd}T00:00:00`);
@@ -440,14 +475,31 @@
                               },
                               isInRange(date) { return date >= this.rangeStart && date <= this.rangeEnd; },
                               hasParkDate(date) { return this.parkDates[date] !== undefined; },
-                              addParkDateOverride(date) {
-                                  if (!this.hasOverride(date)) {
-                                      const isAvailable = this.hasParkDate(date) ? this.parkDates[date] : this.defaultAvailable === '1';
-                                      this.dates.push({ date, is_available: isAvailable ? '1' : '0' });
+                              selectDate(date) {
+                                  if (!this.isInRange(date)) return;
+                                  this.selectedOverrideDate = date;
+                              },
+                              toggleShift(shift) {
+                                  if (!this.selectedOverrideDate) return;
+                                  let override = this.dates.find(item => item.date === this.selectedOverrideDate);
+                                  if (!override) {
+                                      const inheritedAvailability = this.hasParkDate(this.selectedOverrideDate)
+                                          ? this.parkDates[this.selectedOverrideDate]
+                                          : this.defaultAvailable === '1';
+                                      override = {
+                                          date: this.selectedOverrideDate,
+                                          morning_available: inheritedAvailability ? '1' : '0',
+                                          evening_available: inheritedAvailability ? '1' : '0',
+                                      };
+                                      this.dates.push(override);
                                   }
+                                  override[shift] = override[shift] === '1' ? '0' : '1';
+                              },
+                              resetDateOverride() {
+                                  this.dates = this.dates.filter(item => item.date !== this.selectedOverrideDate);
                               }
                           }"
-                          class="space-y-4">
+                          enctype="multipart/form-data" class="space-y-4">
                         @csrf
                         @method('PATCH')
                         <div>
@@ -457,29 +509,60 @@
                         </div>
                         <div>
                             <label for="edit-zone-default-{{ $zone->id }}" class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Zone fallback status</label>
-                            <select id="edit-zone-default-{{ $zone->id }}" name="default_available" required
+                            <select id="edit-zone-default-{{ $zone->id }}" name="default_available" x-model="defaultAvailable" required
                                     class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
                                 <option value="1" @selected($zone->default_available)>Available</option>
                                 <option value="0" @selected(! $zone->default_available)>Not available</option>
                             </select>
                         </div>
+                        <div>
+                            <label for="edit-zone-description-{{ $zone->id }}" class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Short zone description</label>
+                            <textarea id="edit-zone-description-{{ $zone->id }}" name="short_description" maxlength="500" rows="3" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm">{{ old('short_description', $zone->short_description) }}</textarea>
+                        </div>
+                        <div>
+                            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Zone images (up to 2)</p>
+                            <div class="mb-3 grid grid-cols-2 gap-3">
+                                @foreach ($zone->images as $image)
+                                    <div class="rounded-xl border border-slate-200 p-2">
+                                        <img src="{{ Storage::disk('public')->url($image->path) }}" alt="{{ $zone->name }}" class="h-24 w-full rounded-lg object-cover">
+                                        <label class="mt-2 block text-xs text-slate-600">Position
+                                            <input type="number" name="image_positions[{{ $image->id }}]" value="{{ $image->position }}" min="1" max="2" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1">
+                                        </label>
+                                        <label class="mt-2 flex items-center gap-2 text-xs text-red-600"><input type="checkbox" name="remove_images[]" value="{{ $image->id }}" class="!h-4 !w-4"> Remove image</label>
+                                    </div>
+                                @endforeach
+                            </div>
+                            <input type="file" name="images[]" accept="image/jpeg,image/png,image/webp" multiple class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm">
+                        </div>
 
-                        <div class="space-y-3 border-t border-slate-100 pt-4">
+                        <dialog x-effect="if (slotModalOpen && !$el.open) { $el.showModal(); } else if (!slotModalOpen && $el.open) { $el.close(); }"
+                                @close="slotModalOpen = false" @click.self="slotModalOpen = false"
+                                class="m-auto max-h-[90vh] w-[calc(100%-2rem)] max-w-3xl overflow-y-auto rounded-2xl border-0 p-0 shadow-2xl backdrop:bg-slate-950/55">
+                            <div class="space-y-4 p-5 sm:p-7">
+                                <div class="flex items-start justify-between gap-4">
+                                    <div>
+                                        <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">{{ $zone->nationalPark->name }} · {{ $zone->name }}</p>
+                                        <h4 class="mt-1 text-xl font-bold text-slate-900">Morning and evening slots</h4>
+                                        <p class="mt-1 text-sm text-slate-500">Both shifts are available by default when the zone/date is available. Select a date to change either shift.</p>
+                                    </div>
+                                    <button type="button" @click="slotModalOpen = false" aria-label="Close slot calendar"
+                                            class="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900">✕</button>
+                                </div>
+                                <div class="space-y-3 border-t border-slate-100 pt-4">
                             <div class="flex items-center justify-between gap-3">
                                 <div>
-                                    <p class="text-sm font-semibold text-slate-800">Zone-specific date overrides</p>
-                                    <p class="text-xs text-slate-500">These take precedence over the park calendar.</p>
+                                    <p class="text-sm font-semibold text-slate-800">Zone slot calendar</p>
+                                    <p class="text-xs text-slate-500">Choose a date, then toggle Morning or Evening. Clear the override to use the default.</p>
                                 </div>
-                                <button type="button" @click="dates.push({ date: '', is_available: '1' })"
-                                        class="rounded-lg px-2.5 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">+ Add date</button>
                             </div>
                             <div class="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-600">Park dates selected above</p>
-                                <p class="mt-1 text-xs text-slate-500">Colors show park defaults. Select any date to add or edit a zone-specific override.</p>
+                                <p class="mt-1 text-xs text-slate-500">Colors show park defaults. Select a date to add or edit a zone-specific override.</p>
                                 <div class="mt-2 flex flex-wrap gap-3 text-[0.65rem] font-medium text-slate-600">
                                     <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-emerald-600"></span>Available</span>
                                     <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-rose-600"></span>Not available</span>
-                                    <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-slate-200"></span>Uses zone fallback</span>
+                                    <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-amber-500"></span>One shift available</span>
+                                    <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm outline outline-2 outline-blue-600"></span>Zone override</span>
                                 </div>
                                 <label class="mt-3 block text-xs font-semibold text-slate-600">
                                     Show month
@@ -501,16 +584,17 @@
                                                     <span aria-hidden="true"></span>
                                                 </template>
                                                 <template x-for="day in calendarMonth.days" :key="`day-${calendarMonth.key}-${day}`">
-                                                    <button type="button" @click="addParkDateOverride(dateFor(calendarMonth, day))"
+                                                    <button type="button" @click="selectDate(dateFor(calendarMonth, day))"
                                                             :disabled="!isInRange(dateFor(calendarMonth, day))"
-                                                            :aria-label="`${calendarMonth.label} ${day}: ${hasOverride(dateFor(calendarMonth, day)) ? 'Zone override' : hasParkDate(dateFor(calendarMonth, day)) ? (parkDates[dateFor(calendarMonth, day)] ? 'Park default available' : 'Park default not available') : 'Uses zone fallback'}`"
-                                                            :aria-pressed="hasOverride(dateFor(calendarMonth, day))"
+                                                            :aria-label="`${calendarMonth.label} ${day}: Morning ${shiftAvailability(dateFor(calendarMonth, day), 'morning_available') ? 'available' : 'not available'}, Evening ${shiftAvailability(dateFor(calendarMonth, day), 'evening_available') ? 'available' : 'not available'}`"
+                                                            :aria-pressed="selectedOverrideDate === dateFor(calendarMonth, day)"
                                                             :class="{
-                                                                'bg-emerald-600 text-white hover:bg-emerald-700': hasOverride(dateFor(calendarMonth, day)) ? dates.find(override => override.date === dateFor(calendarMonth, day)).is_available === '1' : hasParkDate(dateFor(calendarMonth, day)) && parkDates[dateFor(calendarMonth, day)],
-                                                                'bg-rose-600 text-white hover:bg-rose-700': hasOverride(dateFor(calendarMonth, day)) ? dates.find(override => override.date === dateFor(calendarMonth, day)).is_available === '0' : hasParkDate(dateFor(calendarMonth, day)) && !parkDates[dateFor(calendarMonth, day)],
-                                                                'bg-slate-100 text-slate-700 hover:bg-slate-200': !hasOverride(dateFor(calendarMonth, day)) && !hasParkDate(dateFor(calendarMonth, day)),
+                                                                'bg-emerald-600 text-white hover:bg-emerald-700': shiftAvailability(dateFor(calendarMonth, day), 'morning_available') && shiftAvailability(dateFor(calendarMonth, day), 'evening_available'),
+                                                                'bg-rose-600 text-white hover:bg-rose-700': !shiftAvailability(dateFor(calendarMonth, day), 'morning_available') && !shiftAvailability(dateFor(calendarMonth, day), 'evening_available'),
+                                                                'bg-amber-500 text-white hover:bg-amber-600': shiftAvailability(dateFor(calendarMonth, day), 'morning_available') !== shiftAvailability(dateFor(calendarMonth, day), 'evening_available'),
                                                                 'cursor-not-allowed opacity-25': !isInRange(dateFor(calendarMonth, day)),
-                                                                'outline outline-2 outline-offset-1 outline-blue-600': hasOverride(dateFor(calendarMonth, day))
+                                                                'outline outline-2 outline-offset-1 outline-blue-600': selectedOverrideDate === dateFor(calendarMonth, day),
+                                                                'ring-2 ring-offset-1 ring-blue-400': hasOverride(dateFor(calendarMonth, day))
                                                             }"
                                                             class="mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-xs font-semibold transition sm:h-9 sm:w-9"
                                                             x-text="day"></button>
@@ -520,34 +604,53 @@
                                     </template>
                                 </div>
                             </div>
-                            <p x-show="dates.length === 0" class="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
-                                No zone-specific overrides. This zone follows the park calendar, then its fallback status.
-                            </p>
-                            <template x-for="(date, index) in dates" :key="index">
-                                <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                                    <div class="grid gap-2 sm:grid-cols-2">
-                                        <input type="date" :name="`dates[${index}][date]`" x-model="date.date" :aria-label="`Override date ${index + 1}`"
-                                               class="min-w-0 rounded-lg border border-slate-300 px-2.5 py-2 text-xs outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
-                                        <select :name="`dates[${index}][is_available]`" x-model="date.is_available" :aria-label="`Availability for date ${index + 1}`"
-                                                class="min-w-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
-                                            <option value="1">Available</option>
-                                            <option value="0">Not available</option>
-                                        </select>
-                                    </div>
-                                    <button type="button" @click="dates.splice(index, 1)" :aria-label="`Remove date ${index + 1}`"
-                                            class="rounded-lg px-2 text-xs font-medium text-slate-400 hover:bg-red-50 hover:text-red-600">Remove</button>
                                 </div>
-                            </template>
-                        </div>
+                                <div x-show="selectedOverrideDate" class="space-y-3 rounded-xl bg-slate-50 p-4">
+                                    <p class="text-sm font-semibold text-slate-800">Availability for <span x-text="selectedOverrideDate"></span></p>
+                                    <div class="grid gap-3 sm:grid-cols-2">
+                                        <button type="button" @click="toggleShift('morning_available')"
+                                                :class="shiftAvailability(selectedOverrideDate, 'morning_available') ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'"
+                                                class="rounded-xl border px-4 py-3 text-left text-sm font-semibold">
+                                            Morning · <span x-text="shiftAvailability(selectedOverrideDate, 'morning_available') ? 'Available' : 'Not available'"></span>
+                                        </button>
+                                        <button type="button" @click="toggleShift('evening_available')"
+                                                :class="shiftAvailability(selectedOverrideDate, 'evening_available') ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'"
+                                                class="rounded-xl border px-4 py-3 text-left text-sm font-semibold">
+                                            Evening · <span x-text="shiftAvailability(selectedOverrideDate, 'evening_available') ? 'Available' : 'Not available'"></span>
+                                        </button>
+                                    </div>
+                                    <button type="button" x-show="hasOverride(selectedOverrideDate)" @click="resetDateOverride()" class="text-xs font-semibold text-emerald-700 hover:underline">Use inherited availability</button>
+                                </div>
+                                <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                                    <button type="button" @click="slotModalOpen = false" class="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                                    <button type="submit" class="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">Save slot availability</button>
+                                </div>
+                            </div>
+                        </dialog>
+
+                        <template x-for="(date, index) in dates" :key="date.date">
+                            <span>
+                                <input type="hidden" :name="`dates[${index}][date]`" :value="date.date">
+                                <input type="hidden" :name="`dates[${index}][morning_available]`" :value="date.morning_available">
+                                <input type="hidden" :name="`dates[${index}][evening_available]`" :value="date.evening_available">
+                            </span>
+                        </template>
 
                         <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">Save zone</button>
                     </form>
+                    <form method="POST" action="{{ route('admin.slots.destroy', $zone) }}" class="mt-5 border-t border-slate-100 pt-4">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" onclick="return confirm('Delete this zone and all its date overrides?')"
+                                class="text-xs font-semibold text-red-600 hover:text-red-700">Delete zone</button>
+                    </form>
+                    </div>
 
-                    <div class="lg:border-l lg:border-slate-100 lg:pl-6">
-                        <div class="flex items-center justify-between">
+                    <aside x-show="modifiedDatesOpen" x-transition class="border-t border-slate-100 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+                        <div class="flex items-center justify-between gap-3">
                             <div>
-                                <h4 class="text-sm font-bold text-slate-900">Zone-specific dates</h4>
-                                <p class="mt-1 text-xs text-slate-500">These statuses override the park-wide calendar for this zone.</p>
+                                <h4 class="text-sm font-bold text-slate-900">Saved zone dates</h4>
+                                <p class="mt-1 text-xs text-slate-500">These dates override the park calendar for this zone.</p>
                             </div>
                             <span class="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600">{{ $zone->slots->count() }} override{{ $zone->slots->count() === 1 ? '' : 's' }}</span>
                         </div>
@@ -555,28 +658,26 @@
                         @if ($zone->slots->isEmpty())
                             <div class="mt-4 rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center">
                                 <p class="text-sm font-medium text-slate-700">No zone-specific dates</p>
-                                <p class="mt-1 text-xs text-slate-500">This zone uses the park calendar or its fallback status.</p>
+                                <p class="mt-1 text-xs text-slate-500">This zone follows the park calendar or its fallback status.</p>
                             </div>
                         @else
                             <div class="mt-4 grid gap-2 sm:grid-cols-2">
                                 @foreach ($zone->slots as $slot)
-                                    <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3.5 py-3">
-                                        <span class="text-sm font-medium text-slate-700">{{ $slot->slot_date->format('M j, Y') }}</span>
-                                        <span class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $slot->is_available ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700' }}">
-                                            {{ $slot->is_available ? 'Available' : 'Not available' }}
-                                        </span>
+                                    <div class="rounded-xl border border-slate-200 px-3.5 py-3">
+                                        <p class="text-sm font-medium text-slate-700">{{ $slot->slot_date->format('M j, Y') }}</p>
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            <span class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $slot->morning_available ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700' }}">
+                                                Morning: {{ $slot->morning_available ? 'Available' : 'Not available' }}
+                                            </span>
+                                            <span class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $slot->evening_available ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700' }}">
+                                                Evening: {{ $slot->evening_available ? 'Available' : 'Not available' }}
+                                            </span>
+                                        </div>
                                     </div>
                                 @endforeach
                             </div>
                         @endif
-
-                        <form method="POST" action="{{ route('admin.slots.destroy', $zone) }}" class="mt-5 border-t border-slate-100 pt-4">
-                            @csrf
-                            @method('DELETE')
-                            <button type="submit" onclick="return confirm('Delete this zone and all its date overrides?')"
-                                    class="text-xs font-semibold text-red-600 hover:text-red-700">Delete zone</button>
-                        </form>
-                    </div>
+                    </aside>
                 </div>
             </article>
         @empty

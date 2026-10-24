@@ -18,10 +18,14 @@ class ParkZoneSlotFactory extends Factory
      */
     public function definition(): array
     {
+        $isAvailable = fake()->boolean();
+
         return [
             'park_zone_id' => ParkZone::factory(),
             'slot_date' => fake()->dateTimeBetween('now', '+1 year')->format('Y-m-d'),
-            'is_available' => fake()->boolean(),
+            'is_available' => $isAvailable,
+            'morning_available' => $isAvailable,
+            'evening_available' => $isAvailable,
         ];
     }
 }

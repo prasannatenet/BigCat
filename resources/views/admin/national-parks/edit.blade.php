@@ -11,7 +11,7 @@
             <p class="text-slate-500 mt-1">Update the national park details below.</p>
         </div>
 
-        <form method="POST" action="{{ route('admin.national-parks.update', $nationalPark) }}" class="space-y-6">
+        <form method="POST" enctype="multipart/form-data" action="{{ route('admin.national-parks.update', $nationalPark) }}" class="space-y-6">
             @csrf
             @method('PUT')
 
@@ -38,6 +38,24 @@
                 <textarea name="description" id="description"
                           rows="4"
                           class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all">{{ old('description', $nationalPark->description) }}</textarea>
+            </div>
+
+            <div>
+                <p class="mb-2 text-sm font-medium text-slate-700">Park images (up to 5)</p>
+                <div class="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    @foreach ($nationalPark->images as $image)
+                        <div class="rounded-xl border border-slate-200 p-2">
+                            <img src="{{ Storage::disk('public')->url($image->path) }}" alt="{{ $nationalPark->name }}" class="h-28 w-full rounded-lg object-cover">
+                            <label class="mt-2 block text-xs text-slate-600">Position
+                                <input type="number" name="image_positions[{{ $image->id }}]" value="{{ old('image_positions.'.$image->id, $image->position) }}" min="1" max="5" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1">
+                            </label>
+                            <label class="mt-2 flex items-center gap-2 text-xs text-red-600"><input type="checkbox" name="remove_images[]" value="{{ $image->id }}" class="!h-4 !w-4"> Remove image</label>
+                        </div>
+                    @endforeach
+                </div>
+                <label for="images" class="mb-2 block text-sm font-medium text-slate-700">Add images</label>
+                <input type="file" name="images[]" id="images" accept="image/jpeg,image/png,image/webp" multiple class="w-full rounded-xl border border-slate-300 px-4 py-3">
+                <p class="mt-1 text-xs text-slate-500">JPG, PNG, or WebP; up to 5 MB each. Save to apply positions.</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

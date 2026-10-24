@@ -11,7 +11,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -27,8 +29,14 @@ class SlotController extends Controller
 
         $selectedParkId = $validated['park'] ?? null;
         $calendarYear = (int) ($validated['year'] ?? now()->year);
-        $months = (int) ($validated['months'] ?? $request->session()->get('admin.slots.months', 12));
-        $request->session()->put('admin.slots.months', $months);
+        $admin = $request->user();
+        $months = (int) ($validated['months'] ?? $admin->admin_slot_months ?? 12);
+
+        if (isset($validated['months']) && $admin->admin_slot_months !== $months) {
+            $admin->admin_slot_months = $months;
+            $admin->save();
+        }
+
         $parks = NationalPark::query()->orderBy('name')->get();
         $selectedPark = $selectedParkId
             ? $parks->firstWhere('id', (int) $selectedParkId)
@@ -142,6 +150,9 @@ class SlotController extends Controller
                     ->where('national_park_id', $request->input('national_park_id')),
             ],
             'zones.*.default_available' => ['required', 'in:0,1'],
+            'zones.*.short_description' => ['nullable', 'string', 'max:500'],
+            'zones.*.images' => ['sometimes', 'array', 'max:2'],
+            'zones.*.images.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'zones.*.dates' => ['sometimes', 'array'],
             'zones.*.dates.*' => ['array'],
             'zones.*.dates.*.date' => ['nullable', 'date_format:Y-m-d'],
@@ -156,8 +167,11 @@ class SlotController extends Controller
             foreach ($validated['zones'] as $zoneData) {
                 $zone = $park->zones()->create([
                     'name' => $zoneData['name'],
+                    'short_description' => $zoneData['short_description'] ?? null,
                     'default_available' => $zoneData['default_available'],
                 ]);
+
+                $this->storeZoneImages($zone, $zoneData['images'] ?? []);
 
                 $this->saveDates($zone, $zoneData['dates'] ?? []);
             }
@@ -179,23 +193,68 @@ class SlotController extends Controller
                     ->ignore($parkZone->id),
             ],
             'default_available' => ['required', 'in:0,1'],
+            'short_description' => ['nullable', 'string', 'max:500'],
+            'images' => ['sometimes', 'array', 'max:2'],
+            'images.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'remove_images' => ['sometimes', 'array'],
+            'remove_images.*' => ['integer', 'distinct'],
+            'image_positions' => ['sometimes', 'array'],
+            'image_positions.*' => ['required', 'integer', 'min:1', 'max:2', 'distinct'],
             'dates' => ['sometimes', 'array'],
             'dates.*' => ['array'],
             'dates.*.date' => ['nullable', 'date_format:Y-m-d'],
-            'dates.*.is_available' => ['required_with:dates.*.date', 'in:0,1'],
+            'dates.*.is_available' => ['sometimes', 'in:0,1'],
+            'dates.*.morning_available' => ['sometimes', 'in:0,1'],
+            'dates.*.evening_available' => ['sometimes', 'in:0,1'],
         ]);
 
+        foreach ($validated['dates'] ?? [] as $index => $date) {
+            if (! empty($date['date'])
+                && ! array_key_exists('is_available', $date)
+                && (! array_key_exists('morning_available', $date) || ! array_key_exists('evening_available', $date))) {
+                throw ValidationException::withMessages([
+                    "dates.{$index}.morning_available" => 'Set availability for both morning and evening slots.',
+                ]);
+            }
+        }
+
         $this->validateUniqueDates([$validated['dates'] ?? []], 'dates');
+
+        $removeIds = $validated['remove_images'] ?? [];
+        $uploads = $validated['images'] ?? [];
+        $positions = $validated['image_positions'] ?? [];
+        unset($validated['images'], $validated['remove_images'], $validated['image_positions']);
+        $existingImages = $parkZone->images()->get();
+        if (array_diff($removeIds, $existingImages->pluck('id')->all()) !== []) {
+            throw ValidationException::withMessages(['remove_images' => 'Choose images belonging to this zone.']);
+        }
+        if (array_diff(array_keys($positions), $existingImages->pluck('id')->map(fn ($id) => (string) $id)->all()) !== []) {
+            throw ValidationException::withMessages(['image_positions' => 'Choose images belonging to this zone.']);
+        }
+        if ($existingImages->count() - count($removeIds) + count($uploads) > 2) {
+            throw ValidationException::withMessages(['images' => 'A zone can have up to 2 images. Remove an image before adding another.']);
+        }
 
         DB::transaction(function () use ($parkZone, $validated): void {
             $parkZone->update([
                 'name' => $validated['name'],
+                'short_description' => $validated['short_description'] ?? null,
                 'default_available' => $validated['default_available'],
             ]);
 
             $parkZone->slots()->delete();
             $this->saveDates($parkZone, $validated['dates'] ?? []);
         });
+
+        foreach ($removeIds as $imageId) {
+            $image = $existingImages->firstWhere('id', $imageId);
+            Storage::disk('public')->delete($image->path);
+            $image->delete();
+        }
+        foreach ($positions as $imageId => $position) {
+            $parkZone->images()->whereKey($imageId)->update(['position' => $position]);
+        }
+        $this->storeZoneImages($parkZone, $uploads);
 
         return redirect()->route('admin.slots.index', ['park' => $parkZone->national_park_id])
             ->with('status', 'Zone availability updated successfully.');
@@ -204,6 +263,10 @@ class SlotController extends Controller
     public function destroy(ParkZone $parkZone): RedirectResponse
     {
         $parkId = $parkZone->national_park_id;
+        foreach ($parkZone->images as $image) {
+            Storage::disk('public')->delete($image->path);
+        }
+
         $parkZone->delete();
 
         return redirect()->route('admin.slots.index', ['park' => $parkId])
@@ -232,7 +295,7 @@ class SlotController extends Controller
     }
 
     /**
-     * @param  array<int|string, array{date?: ?string, is_available?: string}>  $dates
+     * @param  array<int|string, array{date?: ?string, is_available?: string, morning_available?: string, evening_available?: string}>  $dates
      */
     private function saveDates(ParkZone $zone, array $dates): void
     {
@@ -241,10 +304,29 @@ class SlotController extends Controller
                 continue;
             }
 
+            $morningAvailable = $date['morning_available'] ?? $date['is_available'] ?? '1';
+            $eveningAvailable = $date['evening_available'] ?? $date['is_available'] ?? '1';
+
             $zone->slots()->create([
                 'slot_date' => $date['date'],
-                'is_available' => $date['is_available'],
+                'is_available' => $morningAvailable === '1' || $eveningAvailable === '1',
+                'morning_available' => $morningAvailable,
+                'evening_available' => $eveningAvailable,
             ]);
+        }
+    }
+
+    /** @param array<int, UploadedFile> $uploads */
+    private function storeZoneImages(ParkZone $zone, array $uploads): void
+    {
+        $usedPositions = $zone->images()->pluck('position')->map(fn ($position): int => (int) $position)->all();
+        foreach ($uploads as $upload) {
+            $position = collect(range(1, 2))->first(fn (int $position): bool => ! in_array($position, $usedPositions, true));
+            $zone->images()->create([
+                'path' => $upload->store('park-zones/'.$zone->id, 'public'),
+                'position' => $position,
+            ]);
+            $usedPositions[] = $position;
         }
     }
 }
