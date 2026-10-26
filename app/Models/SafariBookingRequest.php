@@ -14,6 +14,8 @@ class SafariBookingRequest extends Model
         'safari_mode',
         'safari_shift',
         'safari_date',
+        'requested_dates',
+        'requested_zone_ids',
         'name',
         'phone',
         'phone_country',
@@ -30,6 +32,8 @@ class SafariBookingRequest extends Model
     {
         return [
             'safari_date' => 'date',
+            'requested_dates' => 'array',
+            'requested_zone_ids' => 'array',
             'was_available' => 'boolean',
         ];
     }

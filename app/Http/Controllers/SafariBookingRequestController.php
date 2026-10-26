@@ -101,6 +101,8 @@ class SafariBookingRequestController extends Controller
             'safari_mode' => $draft['safari_mode'],
             'safari_shift' => 'Any',
             'safari_date' => $draft['dates'][0],
+            'requested_dates' => $draft['dates'],
+            'requested_zone_ids' => $zoneIds->all(),
             'name' => $draft['name'],
             'phone' => $draft['phone'],
             'phone_country' => $draft['phone_country'],
