@@ -62,8 +62,8 @@
                                         {{ $availableSlotCount }} / {{ $requestedSlotCount }} available
                                     </span>
                                 @else
-                                    <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $bookingRequest->was_available ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700' }}">
-                                        {{ $bookingRequest->was_available ? 'Available' : 'Unavailable' }}
+                                    <span class="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                                        Waiting for slot selection
                                     </span>
                                 @endif
                             </td>

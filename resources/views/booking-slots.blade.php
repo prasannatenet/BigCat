@@ -36,7 +36,7 @@
 <main>
     <p class="eyebrow">Step 2 of 2 · Choose your safari slots</p>
     <h1>Choose a zone for each slot</h1>
-    <p class="intro">Choose up to one zone for Morning and one for Evening on each date. Assign every zone you selected to a date and slot. A zone can only be visited once per date.</p>
+    <p class="intro">Choose a zone for Morning, Evening, or both on each date. You can select the same zone for both shifts. Assign every zone you selected to a date and slot.</p>
     <div class="summary">
         <span>{{ $selectedPark->name }}</span>
         <span>{{ $draft['safari_mode'] }}</span>
@@ -97,9 +97,6 @@
             const evening = day.querySelector('select[name$="[evening]"]').value;
             if (!morning && !evening) {
                 message = 'Choose at least one zone for every selected date.';
-            }
-            if (morning && evening && morning === evening) {
-                message = 'Choose a different zone for Morning and Evening on the same date.';
             }
             if (morning || evening) scheduledDates.add(day.dataset.date);
             if (morning) scheduledZones.add(morning);

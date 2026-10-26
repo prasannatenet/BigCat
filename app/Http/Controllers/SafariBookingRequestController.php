@@ -94,6 +94,29 @@ class SafariBookingRequestController extends Controller
         $draft = collect($validated)->except(['safari_dates', 'zone_ids'])->all();
         $draft['dates'] = $validated['safari_dates'];
         $draft['zone_ids'] = $zoneIds->all();
+        $bookingRequest = SafariBookingRequest::query()->find($request->session()->get('safari_booking_draft.booking_request_id'));
+        $bookingAttributes = [
+            'national_park_id' => $draft['national_park_id'],
+            'park_zone_id' => $zoneIds->first(),
+            'safari_mode' => $draft['safari_mode'],
+            'safari_shift' => 'Any',
+            'safari_date' => $draft['dates'][0],
+            'name' => $draft['name'],
+            'phone' => $draft['phone'],
+            'phone_country' => $draft['phone_country'],
+            'phone_country_code' => $draft['phone_country_code'],
+            'email' => $draft['email'],
+            'coupon_name' => $draft['coupon_name'] ?? null,
+            'was_available' => false,
+        ];
+        if ($bookingRequest === null) {
+            $bookingAttributes['confirmation_token'] = Str::random(64);
+            $bookingRequest = SafariBookingRequest::create($bookingAttributes);
+        } else {
+            $bookingRequest->update($bookingAttributes);
+        }
+        $draft['booking_request_id'] = $bookingRequest->id;
+        $draft['confirmation_token'] = $bookingRequest->confirmation_token;
         $request->session()->put('safari_booking_draft', $draft);
 
         return redirect()->route('safari-booking.slots');
@@ -271,12 +294,6 @@ class SafariBookingRequestController extends Controller
             return redirect()->route('safari-booking.slots')
                 ->withErrors(['visits' => 'Assign every selected zone to at least one date and slot.']);
         }
-        $zonePerDay = $selectedSlots->map(fn (array $slot): string => $slot['date'].'|'.$slot['zone_id']);
-        if ($zonePerDay->count() !== $zonePerDay->unique()->count()) {
-            return redirect()->route('safari-booking.slots')
-                ->withErrors(['visits' => 'Choose a zone only once per date.']);
-        }
-
         $zones = ParkZone::query()
             ->where('national_park_id', $draft['national_park_id'])
             ->whereIn('id', $expectedZoneIds)
@@ -319,11 +336,12 @@ class SafariBookingRequestController extends Controller
         }
 
         $firstRequestedSlot = $requestedSlots[0];
-        $confirmationToken = Str::random(64);
+        $confirmationToken = $draft['confirmation_token'] ?? Str::random(64);
+        $bookingRequestId = $draft['booking_request_id'] ?? null;
         $preferredShifts = $selectedSlots->pluck('shift')->unique();
         $bookingShift = $preferredShifts->count() === 1 ? $preferredShifts->first() : 'Any';
 
-        DB::transaction(function () use ($draft, $bookingShift, $firstRequestedSlot, $requestedSlots, $confirmationToken): void {
+        DB::transaction(function () use ($draft, $bookingRequestId, $bookingShift, $firstRequestedSlot, $requestedSlots, $confirmationToken): void {
             $couponId = null;
             if (! empty($draft['coupon_name'])) {
                 $coupon = Coupon::query()
@@ -352,7 +370,7 @@ class SafariBookingRequestController extends Controller
                 }
             }
 
-            $bookingRequest = SafariBookingRequest::create([
+            $bookingAttributes = [
                 'national_park_id' => $draft['national_park_id'],
                 'park_zone_id' => $firstRequestedSlot['park_zone_id'],
                 'safari_mode' => $draft['safari_mode'],
@@ -367,7 +385,13 @@ class SafariBookingRequestController extends Controller
                 'coupon_id' => $couponId,
                 'confirmation_token' => $confirmationToken,
                 'was_available' => $firstRequestedSlot['was_available'],
-            ]);
+            ];
+            $bookingRequest = SafariBookingRequest::query()->find($bookingRequestId);
+            if ($bookingRequest === null) {
+                $bookingRequest = SafariBookingRequest::create($bookingAttributes);
+            } else {
+                $bookingRequest->update($bookingAttributes);
+            }
 
             $bookingRequest->slots()->createMany($requestedSlots);
         });
